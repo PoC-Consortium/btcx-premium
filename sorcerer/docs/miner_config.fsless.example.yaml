@@ -1,0 +1,47 @@
+# Sorcerer miner — fsless (raw block-device) plots.
+# The juggler config: what this machine HAS (machine, plots) and what it
+# JUGGLES TOWARD (networks, targets); `accounts` route each id to its
+# target(s). See miner_config.example.yaml for the fully-commented form.
+
+machine:
+  cpu_threads: 4
+  cpu_thread_pinning: false
+
+plots:
+  dirs: []
+  devices:
+    - /dev/sda
+    - /dev/sdb
+  direct_io: true
+  read_cache_in_warps: 16
+  wakeup_after: 0
+  on_the_fly_compression: false
+
+# Where blocks come from — ONE mining-info source per network.
+networks:
+  - id: 'Bitcoin-PoCX Mainnet'
+    mining_info:
+      url: 'http://127.0.0.1:8332'
+      auth: { type: cookie, cookie_path: '/root/.bitcoin-pocx/.cookie' }
+    block_time: 120
+    poll_interval_ms: 1000
+
+# Where deadlines go. A solo target with no endpoint submits back to the
+# network's own node (query and forge on the same machine).
+targets:
+  - name: solo
+    network: 'Bitcoin-PoCX Mainnet'
+    mode: solo
+
+# Routing — each id declared once, names its target(s).
+accounts:
+  - id: pocx1q8kjc3kapwmw7nnprszw2hw54lh7aua9s32q87w
+    targets: [ solo ]
+
+timeout: 5000
+benchmark: 'Disabled'   # 'CPU' = hash bench, 'IO' = read-only disk bench
+                        # (full benchmark semantics: miner_config.example.yaml)
+console_log_level: 'info'
+logfile_log_level: 'off'
+logfile_max_count: 1
+logfile_max_size: 1

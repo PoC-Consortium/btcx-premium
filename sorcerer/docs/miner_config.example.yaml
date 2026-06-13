@@ -1,0 +1,101 @@
+# Sorcerer miner configuration — the multi-network "juggler" format.
+#
+# Two halves:
+#   THIS MACHINE HAS      → `machine` (compute) + `plots` (the data)
+#   THIS MACHINE JUGGLES  → `networks` (where blocks come from) +
+#                           `targets` (where deadlines go) +
+#                           `accounts` (which id routes to which target)
+#
+# Endpoint auth (`type:`):
+#   none       no authentication (open pools, testing)
+#   user_pass  { type: user_pass, username: u, password: p }
+#   cookie     { type: cookie, cookie_path: '/path/.cookie' }  (Bitcoin-Core style)
+#
+# Target mode: `pool` | `solo`  (an id may NOT be both on one network — it
+# forges in exactly one place).
+
+# ── THIS MACHINE HAS ────────────────────────────────────────────────────
+machine:
+  cpu_threads: 0            # 0 = auto-detect (all logical cores)
+  cpu_thread_pinning: true
+  gpu: auto                 # auto | none | "platform:device:cores" (GPU miner)
+                            # hard override: the global `--nogpu` flag (or
+                            # SORCERER_NO_GPU=1) disables ALL OpenCL probing —
+                            # never loads libOpenCL; CPU only.
+  memory_budget: 40GiB      # host buffer budget (GPU miner / plotter)
+
+plots:
+  # Filesystem-backed .pocx plot directories
+  dirs:
+    - '/mnt/plots'
+  # Raw block devices holding fsless plots (one plot/device, metadata in
+  # the on-device superblock). FS and raw may be mixed freely.
+  devices: []
+    # - /dev/sda
+  direct_io: true              # bypass OS cache
+  read_cache_in_warps: 16      # read buffer size in warps
+  wakeup_after: 30             # wake idle HDDs after N seconds (0 = off)
+  on_the_fly_compression: true # compress uncompressed plots while mining
+
+# ── THIS MACHINE JUGGLES TOWARD ─────────────────────────────────────────
+# One mining-info source per network. Add testnet alongside mainnet to mine
+# both; each network polls independently.
+networks:
+  - id: mainnet
+    mining_info:
+      url: 'http://127.0.0.1:8332'
+      auth: { type: cookie, cookie_path: '/root/.bitcoin-pocx/.cookie' }
+    block_time: 120
+    poll_interval_ms: 1000
+  # - id: testnet
+  #   mining_info: { url: 'http://127.0.0.1:18332', auth: { type: cookie, cookie_path: '/root/.bitcoin-pocx/testnet/.cookie' } }
+  #   block_time: 120
+
+# Named, reusable destinations. A `solo` target with no `endpoint` submits
+# back to its network's own node (query + forge on the same machine) — over
+# RPC, so the node may be remote: mine a customer's plots while forging at
+# their wallet (Plotting-Mining as a Service).
+targets:
+  - name: main-pool
+    network: mainnet
+    mode: pool
+    endpoint: 'https://pool.example.org'
+    auth: { type: none }
+  - name: main-solo
+    network: mainnet
+    mode: solo
+    # endpoint/auth omitted → inherit mainnet's mining-info node
+    # endpoint: 'http://10.0.0.5:8332'     # or a DIFFERENT wallet
+    # auth: { type: cookie, cookie_path: '/root/.bitcoin-pocx/.cookie' }
+
+# ── ROUTING ─────────────────────────────────────────────────────────────
+# Each id (PoCX address or 40-char hex payload) declared ONCE, naming its
+# target(s). Every discovered plot bearing that id follows this; an
+# undeclared id found on a plot is warned about and skipped (not mined).
+accounts:
+  - id: pocx1q8kjc3kapwmw7nnprszw2hw54lh7aua9s32q87w
+    targets: [ main-pool ]
+    # target_quality: 1000000          # optional per-id quality cap
+  - id: pocx1qxxgy25zau4tzgv0pgrp229sehsd9xnfj4vjuz2
+    targets: [ main-solo ]
+
+# ── OPERATIONAL ─────────────────────────────────────────────────────────
+timeout: 5000                    # request timeout in ms
+
+# Benchmark mode — controls what a mining round DOES (rounds still trigger
+# per new block). Only 'Disabled' ever submits nonces.
+#   'Disabled'  real mining: read, hash, submit   (aliases: off, none)
+#   'CPU'       hash-pipeline bench: plots NOT read; with no plots, an
+#               in-memory plot is fabricated — measures the hash ceiling
+#   'IO'        read-path bench: plots ARE read, nothing hashed/submitted —
+#               pure disk throughput               (alias: 'I/O')
+# Any other value is a STARTUP ERROR (never silently fall back to mining).
+benchmark: 'Disabled'
+
+# Logging
+console_log_level: 'info'        # off, error, warn, info, debug, trace
+logfile_log_level: 'warn'
+logfile_max_count: 10
+logfile_max_size: 20
+console_log_pattern: "{({d(%H:%M:%S)} [{l}]):16.16} {m}{n}"
+logfile_log_pattern: "{({d(%Y-%m-%d %H:%M:%S)} [{l}]):26.26} {m}{n}"
